@@ -1,8 +1,8 @@
 # Latency and Stability Audit
 
-Audit date: 2026-08-14  
-Baseline: `v0.6.0` (`2138618`)  
-Target: Windows 10/11 with WebView2, with cross-platform regressions covered by the existing tests
+- Audit date: 2026-08-14
+- Baseline: `v0.6.0` (`2138618`)
+- Target: Windows 10/11 with WebView2, with cross-platform regressions covered by the existing tests
 
 ## Outcome
 
