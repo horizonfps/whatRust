@@ -17,7 +17,7 @@ function assert(condition, message) {
 function harness(initial) {
   const properties = new Map();
   const children = [];
-  const navigations = [];
+  const invocations = [];
   const root = {
     dataset: {},
     style: { setProperty: (name, value) => properties.set(name, value) },
@@ -44,11 +44,9 @@ function harness(initial) {
     querySelectorAll: () => [surface],
   };
   const window = {
-    location: {
-      origin: "https://web.whatsapp.com",
-      assign: (url) => navigations.push(url),
-    },
+    location: { origin: "https://web.whatsapp.com" },
     __whatrustInitialAppearance: initial,
+    __TAURI__: { core: { invoke: (command) => invocations.push(command) } },
   };
   const MutationObserver = class {
     observe() {}
@@ -58,7 +56,7 @@ function harness(initial) {
     document,
     MutationObserver
   );
-  return { window, root, properties, children, surface, navigations, createElement };
+  return { window, root, properties, children, surface, invocations, createElement };
 }
 
 function earlyDomHarness(initial) {
@@ -126,7 +124,7 @@ console.log("initial OLED appearance is applied before the page renders");
   const settingsButton = h.children.find((child) => child.id === "whatrust-settings-button");
   assert(!!settingsButton, "HRZ appearance button installed");
   h.createElement.lastClick?.({ preventDefault() {}, stopPropagation() {} });
-  assert(h.navigations.includes("whatrust://settings/appearance"), "appearance button sends the trusted settings navigation");
+  assert(h.invocations.includes("open_settings"), "appearance button opens whatRust settings");
 }
 
 console.log("live presets update without a page reload");

@@ -181,6 +181,10 @@ pub fn run() {
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
+            if let Err(error) = window::init_settings_window(handle) {
+                dlog::log(&format!("startup: settings window failed: {error}"));
+            }
+
             // Keep usable accounts alive when one profile cannot initialize.
             open_startup_windows(
                 &f.accounts,

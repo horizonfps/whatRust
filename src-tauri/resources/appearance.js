@@ -113,7 +113,12 @@
         event.preventDefault();
         event.stopPropagation();
       }
-      window.location.assign("whatrust://settings/appearance");
+      try {
+        var invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+        if (!invoke) return;
+        var result = invoke("open_settings");
+        if (result && result.catch) result.catch(function () {});
+      } catch (e) {}
     });
     target.appendChild(button);
   }
