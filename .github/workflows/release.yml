@@ -40,6 +40,6 @@ jobs:
           # workflow_dispatch, tagName is empty so it just builds (no release
           # named after the branch).
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('whatRust {0}', github.ref_name) || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('whatsRust - hrz version {0}', github.ref_name) || '' }}
           releaseDraft: false
           prerelease: false

@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/horizonfps/whatRust"><img src="https://img.shields.io/badge/fork-HRZ-16e69a?labelColor=050505" alt="Fork HRZ"></a>
+  <a href="https://github.com/horizonfps/whatRust/releases/latest"><img src="https://img.shields.io/github/v/release/horizonfps/whatRust?label=release&labelColor=050505" alt="Release mais recente"></a>
   <a href="https://github.com/karem505/whatRust"><img src="https://img.shields.io/badge/upstream-whatRust-8a9a91?labelColor=050505" alt="Projeto original whatRust"></a>
   <img src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%20v2-f17a39?labelColor=050505" alt="Desenvolvido com Rust e Tauri v2">
   <img src="https://img.shields.io/github/license/horizonfps/whatRust?label=license&labelColor=050505" alt="Licença MIT">
@@ -41,7 +42,7 @@ Os achados, correções e riscos ainda abertos estão documentados na [auditoria
 
 ## Como obter a versão HRZ
 
-As personalizações deste fork estão na branch `master` de [horizonfps/whatRust](https://github.com/horizonfps/whatRust). Enquanto não houver um instalador próprio publicado em Releases, compile esta versão a partir do código-fonte; os instaladores do projeto original, listados mais abaixo, entregam a versão upstream sem o tema HRZ.
+Baixe um instalador pronto na página de [Releases do fork HRZ](https://github.com/horizonfps/whatRust/releases/latest) ou use o comando correspondente ao seu sistema na seção [Installation](#installation). Os instaladores dessa página são compilados diretamente do código deste fork e incluem o tema OLED, os fundos personalizados e as correções de estabilidade descritas acima.
 
 ## Contents
 
@@ -156,22 +157,25 @@ OS supports it — before showing your chats. Enable it under **Settings → Sec
 
 **Linux / macOS** — one line:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/karem505/whatRust/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/horizonfps/whatRust/master/install.sh | sh
 ```
 Installs the AppImage to `~/.local/bin` on Linux (with an application-menu entry), or the `.dmg` app into `/Applications` on macOS (Apple Silicon). The macOS build is unsigned — if it warns on first launch, right-click the app → **Open**.
 
 **Windows** — one line (PowerShell):
 ```powershell
-irm https://raw.githubusercontent.com/karem505/whatRust/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/horizonfps/whatRust/master/install.ps1 | iex
 ```
 Downloads and runs the latest NSIS installer (`.exe`); an `.msi` is also available on the release page.
 
-**Manual download** — grab a `.AppImage`/`.deb`, `.dmg`, `.exe`, or `.msi` from the [latest release](https://github.com/karem505/whatRust/releases/latest).
+**Manual download** — grab a `.AppImage`/`.deb`, `.dmg`, `.exe`, or `.msi` from the [latest HRZ release](https://github.com/horizonfps/whatRust/releases/latest).
 
 <details>
 <summary><b>Build from source</b> (Rust + Cargo + Tauri CLI)</summary>
 
 ```bash
+git clone https://github.com/horizonfps/whatRust.git
+cd whatRust
+
 # Linux build dependencies (Ubuntu/Debian)
 sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libhunspell-dev patchelf
@@ -212,7 +216,7 @@ Its native shell is lighter because it doesn't bundle a Chromium browser engine 
 Linux (WebKitGTK), Windows 10/11 (WebView2), and macOS 12.1+ (WKWebView).
 
 ### Is whatRust free and open source?
-Yes — whatRust is free and open source under the MIT License. The source is on [GitHub](https://github.com/karem505/whatRust).
+Yes — whatRust is free and open source under the MIT License. This fork's source is on [GitHub](https://github.com/horizonfps/whatRust), and the original project is available at [karem505/whatRust](https://github.com/karem505/whatRust).
 
 ### Do voice messages, voice calls, and video calls work in whatRust?
 Voice messages work on every platform — whatRust grants the webview microphone and camera access. Voice and video **calls** additionally need WebRTC inside the system webview: that's there on Windows (WebView2/Chromium) and macOS (WKWebKit), but most Linux distributions build WebKitGTK **without** WebRTC, so WhatsApp correctly reports that calling isn't supported on Linux. This is an engine limitation, not a permissions problem — if your distro ships a WebRTC-enabled WebKitGTK, calls light up automatically.
@@ -253,7 +257,7 @@ whatRust only loads the official `web.whatsapp.com` in a native webview and adds
 
 ## Contributing
 
-Contributions to this open-source WhatsApp client are welcome — open an issue or a pull request on [GitHub](https://github.com/karem505/whatRust).
+Contributions to the HRZ fork are welcome — open an issue or a pull request on [GitHub](https://github.com/horizonfps/whatRust).
 
 ## Disclaimer
 

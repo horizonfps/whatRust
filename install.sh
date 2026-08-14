@@ -1,13 +1,13 @@
 #!/bin/sh
 # whatRust one-line installer — Linux & macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/karem505/whatRust/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/horizonfps/whatRust/master/install.sh | sh
 #
 # Downloads the latest published GitHub release and installs it
 # (AppImage on Linux, .app into /Applications on macOS). No build toolchain needed.
 set -eu
 
-REPO="karem505/whatRust"
+REPO="horizonfps/whatRust"
 APP="whatRust"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
