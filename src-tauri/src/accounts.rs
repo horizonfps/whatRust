@@ -146,15 +146,13 @@ fn accounts_path(app: &AppHandle) -> tauri::Result<PathBuf> {
 pub fn load(app: &AppHandle) -> AccountsFile {
     accounts_path(app)
         .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|p| crate::persist::load_json(&p))
         .unwrap_or_default()
 }
 
 pub fn save(app: &AppHandle, f: &AccountsFile) -> tauri::Result<()> {
     let path = accounts_path(app)?;
-    let json = serde_json::to_string_pretty(f).expect("serialize accounts");
-    std::fs::write(path, json)?;
+    crate::persist::save_json(&path, f)?;
     Ok(())
 }
 

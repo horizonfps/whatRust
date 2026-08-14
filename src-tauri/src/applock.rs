@@ -48,15 +48,13 @@ fn config_path(app: &AppHandle) -> tauri::Result<PathBuf> {
 pub fn load(app: &AppHandle) -> AppLockConfig {
     config_path(app)
         .ok()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|p| crate::persist::load_json(&p))
         .unwrap_or_default()
 }
 
 pub fn save(app: &AppHandle, c: &AppLockConfig) -> tauri::Result<()> {
     let path = config_path(app)?;
-    let json = serde_json::to_string_pretty(c).expect("serialize app-lock config");
-    std::fs::write(path, json)?;
+    crate::persist::save_json(&path, c)?;
     Ok(())
 }
 

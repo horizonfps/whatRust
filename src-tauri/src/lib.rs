@@ -6,6 +6,7 @@ mod commands;
 mod dlog;
 mod lock;
 mod notify;
+mod persist;
 mod settings;
 mod tray;
 mod unread;
