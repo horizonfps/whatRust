@@ -11,6 +11,10 @@ pub struct Settings {
     pub notifications: bool,
     /// Display zoom for the WhatsApp webview, 1.0 = the site's own sizing.
     pub zoom: f64,
+    pub oled_theme: bool,
+    pub chat_background: String,
+    pub chat_background_color: String,
+    pub chat_background_image: String,
 }
 
 impl Default for Settings {
@@ -23,6 +27,10 @@ impl Default for Settings {
             hotkey: "CmdOrCtrl+Shift+W".to_string(),
             notifications: true,
             zoom: 1.0,
+            oled_theme: true,
+            chat_background: "pure-black".to_string(),
+            chat_background_color: "#000000".to_string(),
+            chat_background_image: String::new(),
         }
     }
 }
@@ -32,6 +40,7 @@ impl Default for Settings {
 /// level from which the settings window is unreadable.
 pub const ZOOM_MIN: f64 = 0.5;
 pub const ZOOM_MAX: f64 = 2.0;
+pub const MAX_CHAT_BACKGROUND_IMAGE_CHARS: usize = 2_200_000;
 
 /// Bring a zoom factor into range. A non-finite value (a `null` or a string in
 /// the JSON deserialises to the default, but arithmetic in an older build could
@@ -44,10 +53,60 @@ pub fn sanitize_zoom(zoom: f64) -> f64 {
     }
 }
 
+pub fn sanitize_chat_background(value: &str) -> String {
+    match value {
+        "pure-black" | "graphite-grid" | "emerald-glow" | "custom-color" | "custom-image" => {
+            value.to_string()
+        }
+        _ => "pure-black".to_string(),
+    }
+}
+
+pub fn sanitize_chat_background_color(value: &str) -> String {
+    let valid = value.len() == 7
+        && value.starts_with('#')
+        && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit());
+    if valid {
+        value.to_ascii_uppercase()
+    } else {
+        "#000000".to_string()
+    }
+}
+
+pub fn sanitize_chat_background_image(value: &str) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+    let supported = [
+        "data:image/jpeg;base64,",
+        "data:image/png;base64,",
+        "data:image/webp;base64,",
+    ];
+    let Some(prefix) = supported.iter().find(|prefix| value.starts_with(**prefix)) else {
+        return String::new();
+    };
+    let payload = &value[prefix.len()..];
+    let valid_payload = !payload.is_empty()
+        && payload
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='));
+    if value.len() <= MAX_CHAT_BACKGROUND_IMAGE_CHARS && valid_payload {
+        value.to_string()
+    } else {
+        String::new()
+    }
+}
+
 impl Settings {
     /// Repair values an older or hand-edited settings.json can carry.
     pub fn sanitized(mut self) -> Self {
         self.zoom = sanitize_zoom(self.zoom);
+        self.chat_background = sanitize_chat_background(&self.chat_background);
+        self.chat_background_color = sanitize_chat_background_color(&self.chat_background_color);
+        self.chat_background_image = sanitize_chat_background_image(&self.chat_background_image);
+        if self.chat_background == "custom-image" && self.chat_background_image.is_empty() {
+            self.chat_background = "pure-black".to_string();
+        }
         self
     }
 }
@@ -113,7 +172,10 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_zoom, Settings, ZOOM_MAX, ZOOM_MIN};
+    use super::{
+        sanitize_chat_background, sanitize_chat_background_color, sanitize_chat_background_image,
+        sanitize_zoom, Settings, ZOOM_MAX, ZOOM_MIN,
+    };
 
     #[test]
     fn defaults_are_sane() {
@@ -123,6 +185,10 @@ mod tests {
         assert_eq!(s.hotkey, "CmdOrCtrl+Shift+W");
         assert!(!s.autostart);
         assert_eq!(s.zoom, 1.0);
+        assert!(s.oled_theme);
+        assert_eq!(s.chat_background, "pure-black");
+        assert_eq!(s.chat_background_color, "#000000");
+        assert!(s.chat_background_image.is_empty());
     }
 
     #[test]
@@ -178,5 +244,30 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
+    }
+
+    #[test]
+    fn appearance_values_are_restricted_to_safe_css_inputs() {
+        assert_eq!(sanitize_chat_background("emerald-glow"), "emerald-glow");
+        assert_eq!(
+            sanitize_chat_background("url(javascript:alert(1))"),
+            "pure-black"
+        );
+        assert_eq!(sanitize_chat_background_color("#1a2B3c"), "#1A2B3C");
+        assert_eq!(
+            sanitize_chat_background_color("red; color: white"),
+            "#000000"
+        );
+    }
+
+    #[test]
+    fn custom_wallpaper_accepts_only_bounded_image_data_urls() {
+        let valid = "data:image/webp;base64,UklGRg==";
+        assert_eq!(sanitize_chat_background_image(valid), valid);
+        assert!(sanitize_chat_background_image("https://example.com/a.png").is_empty());
+        assert!(sanitize_chat_background_image("data:text/html;base64,PHNjcmlwdD4=").is_empty());
+        assert!(sanitize_chat_background_image("data:image/png;base64,not base64").is_empty());
+        let oversized = format!("data:image/jpeg;base64,{}", "A".repeat(2_200_001));
+        assert!(sanitize_chat_background_image(&oversized).is_empty());
     }
 }
