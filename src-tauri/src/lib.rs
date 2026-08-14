@@ -14,6 +14,39 @@ mod window;
 
 use tauri::Manager;
 
+fn open_startup_windows<T, E, F, R>(
+    items: &[T],
+    mut open: F,
+    mut report_failure: R,
+) -> Result<usize, E>
+where
+    F: FnMut(&T) -> Result<(), E>,
+    R: FnMut(&T, &E),
+{
+    let mut opened = 0;
+    let mut first_error = None;
+
+    for item in items {
+        match open(item) {
+            Ok(()) => opened += 1,
+            Err(error) => {
+                report_failure(item, &error);
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+
+    if opened > 0 {
+        Ok(opened)
+    } else if let Some(error) = first_error {
+        Err(error)
+    } else {
+        Ok(0)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Linux: expose SharedArrayBuffer in the webview. WhatsApp Web's Chrome
@@ -148,10 +181,17 @@ pub fn run() {
             handle.manage(lock::LockState::new(!lock_on_launch));
             let open_hidden = start_hidden || lock_on_launch;
 
-            // Open every account window so each one receives messages/notifications.
-            for a in &f.accounts {
-                window::open_account_window(handle, a, open_hidden)?;
-            }
+            // Keep usable accounts alive when one profile cannot initialize.
+            open_startup_windows(
+                &f.accounts,
+                |account| window::open_account_window(handle, account, open_hidden).map(|_| ()),
+                |account, error| {
+                    dlog::log(&format!(
+                        "startup: account {} window failed: {error}",
+                        account.id
+                    ));
+                },
+            )?;
 
             tray::setup(handle)?;
             tray::rebuild_menu(handle);
@@ -203,4 +243,53 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::open_startup_windows;
+
+    #[test]
+    fn startup_keeps_opening_accounts_after_one_failure() {
+        let accounts = ["default", "broken", "work"];
+        let mut attempted = Vec::new();
+        let mut failures = Vec::new();
+
+        let opened = open_startup_windows(
+            &accounts,
+            |account| {
+                attempted.push(*account);
+                if *account == "broken" {
+                    Err("profile unavailable")
+                } else {
+                    Ok(())
+                }
+            },
+            |account, _error| failures.push(*account),
+        )
+        .expect("at least one account opened");
+
+        assert_eq!(opened, 2);
+        assert_eq!(attempted, accounts);
+        assert_eq!(failures, ["broken"]);
+    }
+
+    #[test]
+    fn startup_returns_the_first_error_when_every_account_fails() {
+        let accounts = ["default", "work"];
+        let mut attempts = 0;
+
+        let error = open_startup_windows(
+            &accounts,
+            |account| {
+                attempts += 1;
+                Err(*account)
+            },
+            |_account, _error| {},
+        )
+        .expect_err("startup must fail without a usable account window");
+
+        assert_eq!(attempts, accounts.len());
+        assert_eq!(error, "default");
+    }
 }
