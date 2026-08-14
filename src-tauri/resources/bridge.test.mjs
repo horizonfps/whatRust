@@ -65,10 +65,25 @@ class FakeInput {
   }
 }
 
-function makeHarness() {
+function makeHarness({ session = new Map() } = {}) {
   const mediaInput = new FakeInput("image/*,video/mp4,video/3gpp,video/quicktime");
   const docInput = new FakeInput("*");
   const logs = [];
+  const invokes = [];
+  const listeners = Object.create(null);
+  let reloads = 0;
+  const body = {
+    children: [],
+    appendChild(element) {
+      element.parentNode = this;
+      this.children.push(element);
+      return element;
+    },
+    removeChild(element) {
+      this.children = this.children.filter((child) => child !== element);
+      element.parentNode = null;
+    },
+  };
   // Simulate WhatsApp's composer lifecycle: it opens right after an input change
   // and "the user sends" ~80ms later. This exercises injectBatch's real waits
   // (composer detected, then queue held until it closes) without long timeouts.
@@ -81,7 +96,15 @@ function makeHarness() {
   const document = {
     title: "WhatsApp",
     readyState: "complete",
+    body,
+    documentElement: body,
     addEventListener() {},
+    createElement() {
+      return { id: "", textContent: "", style: {}, parentNode: null, setAttribute() {} };
+    },
+    getElementById(id) {
+      return body.children.find((child) => child.id === id) || null;
+    },
     querySelectorAll(sel) {
       return sel === 'input[type="file"]' ? [mediaInput, docInput] : [];
     },
@@ -94,8 +117,27 @@ function makeHarness() {
     },
   };
   const window = {
-    location: { origin: "https://web.whatsapp.com" },
-    addEventListener() {},
+    location: {
+      origin: "https://web.whatsapp.com",
+      reload() {
+        reloads++;
+      },
+    },
+    sessionStorage: {
+      getItem: (key) => session.get(key) ?? null,
+      setItem: (key, value) => session.set(key, String(value)),
+    },
+    __TAURI__: {
+      core: {
+        invoke(cmd, args) {
+          invokes.push({ cmd, args });
+          return Promise.resolve();
+        },
+      },
+    },
+    addEventListener(name, listener) {
+      (listeners[name] ||= []).push(listener);
+    },
   };
   const sandboxGlobals = {
     window,
@@ -128,7 +170,18 @@ function makeHarness() {
   const params = Object.keys(sandboxGlobals);
   const fn = new Function(...params, `"use strict";\n${bridgeSrc}`);
   fn(...params.map((k) => sandboxGlobals[k]));
-  return { window, mediaInput, docInput, logs };
+  return {
+    window,
+    mediaInput,
+    docInput,
+    logs,
+    invokes,
+    emit(name, event) {
+      for (const listener of listeners[name] || []) listener(event);
+    },
+    reloadCount: () => reloads,
+    recoveryBanners: () => body.children.filter((child) => child.id === "whatrust-chat-recovery"),
+  };
 }
 
 // Drive the feed the way window.rs stream_drop does.
@@ -145,6 +198,37 @@ function feedFile(w, dropId, idx, name, type, content, { chunks = 1 } = {}) {
 }
 
 // --- tests -------------------------------------------------------------------
+async function testChatTableDesyncRecoversOnce() {
+  console.log("chat-table LID failure triggers one visible recovery");
+  const h = makeHarness();
+  h.emit("unhandledrejection", { reason: new Error("Lid is missing in chat table") });
+  await sleep(350);
+  assert(h.reloadCount() === 1, "page reloaded after the LID failure");
+  assert(
+    h.invokes.some((call) => call.cmd === "notify" && /sincroniza/i.test(call.args.body)),
+    "native recovery notice dispatched"
+  );
+  assert(h.recoveryBanners().some((banner) => /sincroniza/i.test(banner.textContent)), "in-page recovery notice shown");
+  h.emit("unhandledrejection", { reason: new Error("Lid is missing in chat table") });
+  await sleep(350);
+  assert(h.reloadCount() === 1, "duplicate failure does not create a reload loop");
+}
+
+async function testChatTableRecoveryCooldownSurvivesReload() {
+  console.log("chat-table recovery cooldown survives a page reload");
+  const session = new Map();
+  const first = makeHarness({ session });
+  first.emit("unhandledrejection", { reason: new Error("Failed to find row in chat table") });
+  await sleep(350);
+  assert(first.reloadCount() === 1, "alternate chat-table failure triggers recovery");
+
+  const second = makeHarness({ session });
+  second.emit("unhandledrejection", { reason: new Error("Lid is missing in chat table") });
+  await sleep(350);
+  assert(second.reloadCount() === 0, "fresh page respects the recovery cooldown");
+  assert(second.recoveryBanners().some((banner) => /continua/i.test(banner.textContent)), "persistent failure remains visible");
+}
+
 async function testMixedDropLosesNothing() {
   console.log("mixed drop routes everything as documents (no silent loss)");
   const { window: w, mediaInput, docInput } = makeHarness();
@@ -256,6 +340,8 @@ async function testMalformedMessagesAreRejected() {
 }
 
 const tests = [
+  testChatTableDesyncRecoversOnce,
+  testChatTableRecoveryCooldownSurvivesReload,
   testMixedDropLosesNothing,
   testPureMediaGoesToMediaInput,
   testDistinctSameNamedFilesBothAttach,

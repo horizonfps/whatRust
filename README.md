@@ -34,6 +34,7 @@
 - **Persistência atômica** — contas e preferências usam arquivo temporário, `flush`, backup e recuperação para não corromper o estado após uma interrupção.
 - **Menos trabalho na bandeja** — contagens de mensagens repetidas não refazem o menu nem relêem as configurações sem necessidade.
 - **Recuperação do WebView2** — falhas do renderizador acionam recarga; a queda do processo do navegador solicita um único reinício controlado.
+- **Recuperação da tabela de conversas** — erros internos de LID/JID que impedem o envio agora exibem um aviso e recarregam a página uma vez, com cooldown para evitar ciclos.
 - **Sessões preservadas** — os caminhos de recuperação reutilizam o mesmo perfil da webview e não apagam cookies, IndexedDB ou o vínculo do dispositivo.
 - **Inicialização multi-conta resiliente** — uma conta com erro não impede as outras janelas de abrirem.
 - **Arrastar e soltar com backpressure** — cada etapa exige confirmação, mantém apenas um bloco em trânsito, aplica limite de 15 segundos e descarta transferências parciais com segurança.

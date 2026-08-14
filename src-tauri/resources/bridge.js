@@ -43,12 +43,65 @@
       errCount++;
       try { invoke("dlog", { msg: ("pageerr: " + m).slice(0, 300) }); } catch (e) {}
     };
+    var chatRecoveryQueued = false;
+    var chatRecoveryKey = "whatrust-chat-table-recovery";
+    var chatRecoveryCooldownMs = 120000;
+    var showChatRecovery = function (message) {
+      try {
+        var banner = document.getElementById("whatrust-chat-recovery");
+        if (!banner) {
+          banner = document.createElement("div");
+          banner.id = "whatrust-chat-recovery";
+          banner.setAttribute("role", "status");
+          banner.style.cssText = "position:fixed;z-index:2147483647;top:16px;left:50%;transform:translateX(-50%);max-width:560px;padding:11px 16px;border:1px solid #16e69a;border-radius:10px;background:#07150f;color:#f2f7f4;box-shadow:0 8px 30px #000a;font:600 13px/1.4 system-ui;text-align:center";
+          (document.body || document.documentElement).appendChild(banner);
+        }
+        banner.textContent = message;
+        setTimeout(function () {
+          try { if (banner.parentNode) banner.parentNode.removeChild(banner); } catch (e) {}
+        }, 8000);
+      } catch (e) {}
+    };
+    var recoverChatSync = function (detail) {
+      detail = String(detail || "");
+      if (detail.indexOf("Lid is missing in chat table") < 0 && detail.indexOf("Failed to find row in chat table") < 0) {
+        return false;
+      }
+      if (chatRecoveryQueued) return true;
+      chatRecoveryQueued = true;
+
+      var now = Date.now();
+      var last = 0;
+      try { last = Number(window.sessionStorage.getItem(chatRecoveryKey)) || 0; } catch (e) {}
+      if (now - last < chatRecoveryCooldownMs) {
+        elog("chat-table recovery suppressed by cooldown");
+        showChatRecovery("A sincronização da conversa continua com erro. Reinicie o aplicativo.");
+        nativeNotify("whatRust - hrz version", "A sincronização da conversa continua com erro. Reinicie o aplicativo.");
+        return true;
+      }
+
+      try { window.sessionStorage.setItem(chatRecoveryKey, String(now)); } catch (e) {}
+      elog("chat-table desync detected; reload queued");
+      showChatRecovery("O WhatsApp Web perdeu a sincronização da conversa. Recarregando...");
+      nativeNotify("whatRust - hrz version", "O WhatsApp Web perdeu a sincronização da conversa. Recarregando...");
+      setTimeout(function () {
+        try {
+          window.location.reload();
+        } catch (e) {
+          chatRecoveryQueued = false;
+          elog("chat-table reload failed");
+        }
+      }, 250);
+      return true;
+    };
     window.addEventListener("error", function (e) {
       if (e && e.message) elog("onerror: " + e.message + " @" + (e.filename || "") + ":" + (e.lineno || 0));
     }, true);
     window.addEventListener("unhandledrejection", function (e) {
       var r = e && e.reason;
-      elog("unhandledrejection: " + ((r && (r.stack || r.message)) || r));
+      var detail = (r && (r.stack || r.message)) || r;
+      elog("unhandledrejection: " + detail);
+      recoverChatSync(detail);
     });
     // NOTE: we deliberately do NOT hook console.error — WhatsApp routes routine,
     // message-adjacent logs through it, which would risk leaking chat content into
