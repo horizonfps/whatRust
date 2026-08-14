@@ -141,6 +141,7 @@ pub fn apply(app: &AppHandle, s: &Settings) -> Option<String> {
     // Zoom is a webview property, so it applies on every platform and takes
     // effect on the open account windows without a reload.
     crate::window::apply_zoom_all(app, s.zoom);
+    crate::window::apply_appearance_all(app, s);
 
     #[cfg(desktop)]
     {

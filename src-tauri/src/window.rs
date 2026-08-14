@@ -55,7 +55,32 @@ fn user_agent_override() -> Option<&'static str> {
 }
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
+const APPEARANCE_JS: &str = include_str!("../resources/appearance.js");
 const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
+
+fn appearance_payload(settings: &crate::settings::Settings) -> String {
+    serde_json::json!({
+        "oled": settings.oled_theme,
+        "background": settings.chat_background,
+        "color": settings.chat_background_color,
+        "image": settings.chat_background_image,
+    })
+    .to_string()
+}
+
+fn appearance_config_script(settings: &crate::settings::Settings) -> String {
+    format!(
+        "window.__whatrustInitialAppearance={};",
+        appearance_payload(settings)
+    )
+}
+
+fn appearance_apply_script(settings: &crate::settings::Settings) -> String {
+    format!(
+        "window.__whatrustApplyAppearance?window.__whatrustApplyAppearance({}):\"NOHANDLER\"",
+        appearance_payload(settings)
+    )
+}
 
 /// Open (or focus, if it already exists) the window for `account`. The label is
 /// `wa-<id>`; everything the single-account window carried is preserved (Chrome UA,
@@ -75,6 +100,13 @@ pub fn open_account_window(
 
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
     let icon = tauri::image::Image::from_bytes(APP_ICON)?;
+    let settings = crate::settings::load(app);
+    let initialization_script = format!(
+        "{}\n{}\n{}",
+        appearance_config_script(&settings),
+        APPEARANCE_JS,
+        BRIDGE_JS
+    );
 
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(format!("whatRust — {}", account.name))
@@ -86,7 +118,7 @@ pub fn open_account_window(
         None => builder,
     };
     let builder = builder
-        .initialization_script(BRIDGE_JS)
+        .initialization_script(initialization_script)
         // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
         // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
         // We deliberately KEEP Tauri's drag-drop handler enabled: on Linux/webkit2gtk the
@@ -167,7 +199,7 @@ pub fn open_account_window(
         }
     });
 
-    apply_zoom(&win, crate::settings::load(app).zoom);
+    apply_zoom(&win, settings.zoom);
     register_focus_listener(app, &win);
     register_drop_handler(&win);
     enable_webview_media(&win);
@@ -192,6 +224,15 @@ pub fn apply_zoom_all(app: &AppHandle, zoom: f64) {
     for a in accounts::load(app).accounts {
         if let Some(w) = app.get_webview_window(&accounts::window_label(&a.id)) {
             apply_zoom(&w, zoom);
+        }
+    }
+}
+
+pub fn apply_appearance_all(app: &AppHandle, settings: &crate::settings::Settings) {
+    let script = appearance_apply_script(settings);
+    for account in accounts::load(app).accounts {
+        if let Some(window) = app.get_webview_window(&accounts::window_label(&account.id)) {
+            let _ = window.eval(&script);
         }
     }
 }
@@ -1145,16 +1186,34 @@ mod tests {
     #[cfg(not(windows))]
     use super::CHROME_UA;
     use super::{
-        base64_encode, drop_ack_is, drop_msg_begin, drop_msg_chunk_prefix, drop_msg_commit,
-        drop_msg_end, ensure_download_destination, mime_for, plan_drop, stream_chunks,
-        summarize_skips, toggle_decision, user_agent_override, DropSkips, StreamAbort, ToggleAct,
-        DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
+        appearance_config_script, base64_encode, drop_ack_is, drop_msg_begin,
+        drop_msg_chunk_prefix, drop_msg_commit, drop_msg_end, ensure_download_destination,
+        mime_for, plan_drop, stream_chunks, summarize_skips, toggle_decision, user_agent_override,
+        DropSkips, StreamAbort, ToggleAct, DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
     };
 
     #[cfg(windows)]
     #[test]
     fn windows_keeps_the_native_webview2_user_agent() {
         assert_eq!(user_agent_override(), None);
+    }
+
+    #[test]
+    fn appearance_config_is_json_encoded_for_the_initialization_script() {
+        let settings = crate::settings::Settings {
+            oled_theme: true,
+            chat_background: "custom-image".into(),
+            chat_background_color: "#102030".into(),
+            chat_background_image: "data:image/webp;base64,UklGRg==".into(),
+            ..Default::default()
+        };
+        let script = appearance_config_script(&settings);
+
+        assert!(script.starts_with("window.__whatrustInitialAppearance="));
+        assert!(script.contains("\"oled\":true"));
+        assert!(script.contains("\"background\":\"custom-image\""));
+        assert!(script.contains("data:image/webp;base64,UklGRg=="));
+        assert!(script.ends_with(';'));
     }
 
     #[cfg(windows)]
