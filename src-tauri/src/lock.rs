@@ -105,7 +105,7 @@ pub fn show_lock_window(app: &AppHandle) {
         return;
     }
     let built = WebviewWindowBuilder::new(app, "lock", WebviewUrl::App("lock.html".into()))
-        .title("whatRust — Locked")
+        .title(format!("{} — Locked", crate::window::APP_TITLE))
         .inner_size(420.0, 540.0)
         .resizable(false)
         .decorations(false)

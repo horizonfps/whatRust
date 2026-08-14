@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "whatRust",
+  "productName": "whatRust - hrz version",
   "version": "0.6.0",
   "identifier": "com.karem.whatrust",
   "build": {

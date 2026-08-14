@@ -262,7 +262,7 @@ pub fn rename_account(
     accounts::save(&app, &f).map_err(|e| e.to_string())?;
 
     if let Some(w) = app.get_webview_window(&accounts::window_label(&id)) {
-        let _ = w.set_title(&format!("whatRust — {name}"));
+        let _ = w.set_title(crate::window::APP_TITLE);
     }
     crate::tray::rebuild_menu(&app);
     Ok(())

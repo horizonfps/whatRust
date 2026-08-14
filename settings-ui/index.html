@@ -3,14 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>whatRust — Settings</title>
+    <title>whatRust - hrz version — Settings</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="dialog.css" />
   </head>
   <body>
-    <h1>whatRust Settings</h1>
+    <header class="app-header">
+      <div class="brand-mark" aria-hidden="true">H</div>
+      <div class="brand-copy">
+        <p>HRZ PERSONAL BUILD</p>
+        <h1>whatRust <span>settings</span></h1>
+      </div>
+      <span class="build-tag">OLED.01</span>
+    </header>
 
-    <h2>Accounts</h2>
+    <h2><span class="section-index">01</span> Accounts</h2>
     <div id="accounts-list"></div>
     <div class="add-row">
       <input type="text" id="new_account_name" placeholder="New account name" />
@@ -20,7 +27,58 @@
 
     <hr class="divider" />
 
-    <h2 class="section-title">Preferences</h2>
+    <section class="appearance-panel" aria-labelledby="appearance-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">DISPLAY SYSTEM</p>
+          <h2 id="appearance-title"><span class="section-index">02</span> Appearance</h2>
+        </div>
+        <span class="live-indicator"><i></i> LIVE</span>
+      </div>
+
+      <label class="row oled-toggle">
+        <input type="checkbox" id="oled_theme" />
+        <span><strong>OLED noir</strong><small>True black surfaces, restrained contrast and emerald signals.</small></span>
+      </label>
+
+      <label class="field">
+        <span>Conversation background</span>
+        <select id="chat_background">
+          <option value="pure-black">Pure black</option>
+          <option value="graphite-grid">Graphite grid</option>
+          <option value="emerald-glow">Emerald glow</option>
+          <option value="custom-color">Custom color</option>
+          <option value="custom-image">Custom image</option>
+        </select>
+      </label>
+
+      <div id="background_color_row" class="color-row" hidden>
+        <label for="chat_background_color">Background color</label>
+        <input type="color" id="chat_background_color" value="#000000" />
+        <code id="background_color_value">#000000</code>
+      </div>
+
+      <div id="background_image_row" class="image-row" hidden>
+        <input type="file" id="chat_background_file" accept="image/jpeg,image/png,image/webp" hidden />
+        <button type="button" id="choose_background" class="secondary">Choose image</button>
+        <button type="button" id="clear_background" class="ghost">Clear</button>
+        <span id="background_image_status">No image selected</span>
+      </div>
+
+      <div id="wallpaper_preview" class="wallpaper-preview" data-background="pure-black" aria-label="Conversation background preview">
+        <div class="preview-top"><span></span><span></span><span></span></div>
+        <div class="preview-chat">
+          <i class="bubble incoming"></i>
+          <i class="bubble outgoing"></i>
+          <i class="bubble incoming short"></i>
+        </div>
+      </div>
+      <p class="field-note">Changes apply to every open account without reloading. Images stay on this PC and are resized to 1920 × 1080.</p>
+    </section>
+
+    <hr class="divider" />
+
+    <h2 class="section-title"><span class="section-index">03</span> Preferences</h2>
 
     <label class="row"><input type="checkbox" id="close_to_tray" /> <span>Close to tray (keep running in background)</span></label>
     <label class="row"><input type="checkbox" id="start_minimized" /> <span>Start minimized to tray</span></label>
@@ -51,7 +109,7 @@
     <p class="field-note">On Linux/Wayland the in-app shortcut can't fire (the desktop blocks global key grabs). Bind <code>whatrust --toggle</code> in your system keyboard settings instead — see the README.</p>
 
     <hr class="divider" />
-    <h2 class="section-title">Security</h2>
+    <h2 class="section-title"><span class="section-index">04</span> Security</h2>
 
     <div id="lock-disabled">
       <label class="field"><span>App-lock password (min 4 characters)</span>
@@ -86,6 +144,7 @@
 
     <script src="dialog.js"></script>
     <script src="hotkey.js"></script>
+    <script src="appearance.js"></script>
     <script src="main.js"></script>
   </body>
 </html>

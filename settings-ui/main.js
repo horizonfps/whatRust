@@ -1,6 +1,7 @@
 const invoke = window.__TAURI__.core.invoke;
-const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled"];
+const BOOLS = ["close_to_tray", "start_minimized", "autostart", "notifications", "hotkey_enabled", "oled_theme"];
 const ZOOM_DEFAULT = 1;
+let chatBackgroundImage = "";
 
 // settings.json holds a zoom factor, not a preset name, so a stored value need
 // not be one of the four options offered here — it can come from a hand edit or
@@ -19,6 +20,10 @@ async function load() {
   }
   document.getElementById("hotkey").value = s.hotkey || "CmdOrCtrl+Shift+W";
   selectNearestZoom(Number.isFinite(s.zoom) ? s.zoom : ZOOM_DEFAULT);
+  document.getElementById("chat_background").value = s.chat_background || "pure-black";
+  document.getElementById("chat_background_color").value = s.chat_background_color || "#000000";
+  chatBackgroundImage = s.chat_background_image || "";
+  renderAppearanceControls();
 }
 
 async function save() {
@@ -30,6 +35,9 @@ async function save() {
   const hk = document.getElementById("hotkey").value.trim();
   s.hotkey = hk || "CmdOrCtrl+Shift+W";
   s.zoom = parseFloat(document.getElementById("zoom").value) || ZOOM_DEFAULT;
+  s.chat_background = document.getElementById("chat_background").value;
+  s.chat_background_color = document.getElementById("chat_background_color").value.toUpperCase();
+  s.chat_background_image = chatBackgroundImage;
   const note = document.getElementById("note");
   try {
     const warn = await invoke("set_settings", { settings: s });
@@ -43,6 +51,69 @@ async function save() {
   } catch (e) {
     note.textContent = String(e);
   }
+}
+
+function renderAppearanceControls() {
+  const background = document.getElementById("chat_background").value;
+  const color = document.getElementById("chat_background_color").value.toUpperCase();
+  const preview = document.getElementById("wallpaper_preview");
+  document.getElementById("background_color_row").hidden = background !== "custom-color";
+  document.getElementById("background_image_row").hidden = background !== "custom-image";
+  document.getElementById("background_color_value").textContent = color;
+  document.getElementById("background_image_status").textContent = chatBackgroundImage
+    ? "Optimized image ready"
+    : "No image selected";
+  preview.dataset.background = background;
+  preview.style.backgroundColor = background === "custom-color" ? color : "#000000";
+  preview.style.backgroundImage = "";
+  preview.style.backgroundPosition = "";
+  preview.style.backgroundRepeat = "";
+  preview.style.backgroundSize = "";
+  if (background === "custom-image" && chatBackgroundImage) {
+    preview.style.backgroundImage = `linear-gradient(#0009,#0009),url("${chatBackgroundImage}")`;
+    preview.style.backgroundPosition = "center";
+    preview.style.backgroundRepeat = "no-repeat";
+    preview.style.backgroundSize = "cover";
+  }
+}
+
+async function chooseBackgroundImage(file) {
+  const status = document.getElementById("background_image_status");
+  status.textContent = "Optimizing locally…";
+  try {
+    chatBackgroundImage = await window.AppearanceFmt.compressWallpaper(file);
+    document.getElementById("chat_background").value = "custom-image";
+    renderAppearanceControls();
+    await save();
+  } catch (error) {
+    status.textContent = "No image selected";
+    await Dlg.alert(String(error.message || error), { title: "Could not use this image" });
+  }
+}
+
+function wireAppearance() {
+  const background = document.getElementById("chat_background");
+  const color = document.getElementById("chat_background_color");
+  const file = document.getElementById("chat_background_file");
+
+  document.getElementById("oled_theme").addEventListener("change", save);
+  background.addEventListener("change", () => {
+    renderAppearanceControls();
+    if (background.value !== "custom-image" || chatBackgroundImage) save();
+  });
+  color.addEventListener("input", renderAppearanceControls);
+  color.addEventListener("change", save);
+  document.getElementById("choose_background").addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    if (file.files && file.files[0]) chooseBackgroundImage(file.files[0]);
+    file.value = "";
+  });
+  document.getElementById("clear_background").addEventListener("click", () => {
+    chatBackgroundImage = "";
+    background.value = "pure-black";
+    renderAppearanceControls();
+    save();
+  });
 }
 
 // --- Accounts ---
@@ -158,6 +229,7 @@ window.addEventListener("DOMContentLoaded", () => {
   loadAccounts();
   loadLock();
   wireLock();
+  wireAppearance();
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("add_account").addEventListener("click", addAccount);
   document.getElementById("new_account_name").addEventListener("keydown", (e) => {

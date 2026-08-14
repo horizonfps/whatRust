@@ -57,6 +57,7 @@ fn user_agent_override() -> Option<&'static str> {
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
 const APPEARANCE_JS: &str = include_str!("../resources/appearance.js");
 const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
+pub const APP_TITLE: &str = "whatRust - hrz version";
 
 fn appearance_payload(settings: &crate::settings::Settings) -> String {
     serde_json::json!({
@@ -109,7 +110,7 @@ pub fn open_account_window(
     );
 
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-        .title(format!("whatRust — {}", account.name))
+        .title(APP_TITLE)
         .inner_size(1100.0, 800.0)
         .min_inner_size(560.0, 480.0)
         .icon(icon)?;
@@ -1175,9 +1176,10 @@ pub fn open_settings_window(app: &AppHandle) {
         return;
     }
     let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("index.html".into()))
-        .title("whatRust — Settings")
-        .inner_size(440.0, 680.0)
-        .resizable(false)
+        .title(format!("{APP_TITLE} — Settings"))
+        .inner_size(500.0, 780.0)
+        .min_inner_size(440.0, 620.0)
+        .resizable(true)
         .build();
 }
 

@@ -46,7 +46,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     TrayIconBuilder::with_id("main-tray")
         .icon(Image::from_bytes(ICON_NORMAL)?)
         .icon_as_template(ICON_IS_TEMPLATE)
-        .tooltip("WhatsApp")
+        .tooltip(crate::window::APP_TITLE)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
