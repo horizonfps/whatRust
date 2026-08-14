@@ -9,8 +9,7 @@ use tauri::Manager;
 /// Account windows carry the `wa-<id>` label; the trusted local `settings` window
 /// does not. Tauri injects the calling `window`; the remote page cannot forge its
 /// label. WhatsApp pages keep `notify`/`set_unread` (they need them) but are denied
-/// `open_settings` is also allowed because it only reveals trusted local UI.
-/// WhatsApp pages are denied every account-management command.
+/// every account-management command.
 fn is_remote(window: &tauri::Window) -> bool {
     is_remote_label(window.label())
 }
@@ -115,7 +114,10 @@ pub fn set_settings(
 }
 
 #[tauri::command]
-pub fn open_settings(_window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+pub fn open_settings(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+    if is_remote(&window) {
+        return Err("forbidden".into());
+    }
     lock::require_unlocked(&app)?;
     crate::window::open_settings_window(&app);
     Ok(())

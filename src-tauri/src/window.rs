@@ -59,6 +59,10 @@ const APPEARANCE_JS: &str = include_str!("../resources/appearance.js");
 const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
 pub const APP_TITLE: &str = "whatRust - hrz version";
 
+fn is_settings_navigation(url: &tauri::Url) -> bool {
+    url.scheme() == "whatrust" && url.host_str() == Some("settings") && url.path() == "/appearance"
+}
+
 fn appearance_payload(settings: &crate::settings::Settings) -> String {
     serde_json::json!({
         "oled": settings.oled_theme,
@@ -102,6 +106,7 @@ pub fn open_account_window(
     let url = "https://web.whatsapp.com/".parse().expect("valid url");
     let icon = tauri::image::Image::from_bytes(APP_ICON)?;
     let settings = crate::settings::load(app);
+    let navigation_app = app.clone();
     let initialization_script = format!(
         "{}\n{}\n{}",
         appearance_config_script(&settings),
@@ -129,7 +134,14 @@ pub fn open_account_window(
         // there. The handler is what hands us the dropped paths via `WindowEvent::DragDrop`.
         // Belt-and-braces: cancel any `file://` navigation so a stray drop can never
         // navigate the window away and tear down the live WhatsApp session.
-        .on_navigation(|url| url.scheme() != "file")
+        .on_navigation(move |url| {
+            if is_settings_navigation(url) {
+                open_settings_window(&navigation_app);
+                false
+            } else {
+                url.scheme() != "file"
+            }
+        })
         // Downloads: with NO handler registered, wry never wires up the platform's
         // download machinery at all — on Linux nobody answers WebKit's
         // `decide-destination` and the engine cancels every download, so WhatsApp's
@@ -1190,8 +1202,9 @@ mod tests {
     use super::{
         appearance_config_script, base64_encode, drop_ack_is, drop_msg_begin,
         drop_msg_chunk_prefix, drop_msg_commit, drop_msg_end, ensure_download_destination,
-        mime_for, plan_drop, stream_chunks, summarize_skips, toggle_decision, user_agent_override,
-        DropSkips, StreamAbort, ToggleAct, DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
+        is_settings_navigation, mime_for, plan_drop, stream_chunks, summarize_skips,
+        toggle_decision, user_agent_override, DropSkips, StreamAbort, ToggleAct, DROP_CHUNK_BYTES,
+        DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
     };
 
     #[cfg(windows)]
@@ -1216,6 +1229,19 @@ mod tests {
         assert!(script.contains("\"background\":\"custom-image\""));
         assert!(script.contains("data:image/webp;base64,UklGRg=="));
         assert!(script.ends_with(';'));
+    }
+
+    #[test]
+    fn only_the_internal_settings_url_opens_local_settings() {
+        assert!(is_settings_navigation(
+            &tauri::Url::parse("whatrust://settings/appearance").unwrap()
+        ));
+        assert!(!is_settings_navigation(
+            &tauri::Url::parse("https://web.whatsapp.com/settings").unwrap()
+        ));
+        assert!(!is_settings_navigation(
+            &tauri::Url::parse("whatrust://other/appearance").unwrap()
+        ));
     }
 
     #[cfg(windows)]
