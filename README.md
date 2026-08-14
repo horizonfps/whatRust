@@ -1,21 +1,52 @@
+<h1 align="center">whatsRust - hrz version</h1>
+
 <p align="center">
-  <img src="src-tauri/icons/128x128.png" width="96" alt="whatRust app icon — a lightweight WhatsApp Web desktop client">
+  <img src="docs/assets/whatsrust-hrz-cover.png" width="480" alt="Portgas D. Ace sorrindo — capa do whatsRust - hrz version">
 </p>
 
-# whatRust — Lightweight WhatsApp Web Desktop Client (Rust + Tauri)
+<p align="center">
+  <strong>Fork pessoal do whatRust com visual OLED, personalização de conversas e foco em estabilidade no Windows.</strong>
+</p>
 
-**whatRust is a free, open-source, lightweight desktop client for WhatsApp Web that runs on Linux, Windows, and macOS — a lean, native alternative to the official Electron-based WhatsApp Desktop app, built with Rust and Tauri v2. It runs multiple WhatsApp accounts at once, each in its own window with a fully isolated login.**
+<p align="center">
+  <a href="https://github.com/horizonfps/whatRust"><img src="https://img.shields.io/badge/fork-HRZ-16e69a?labelColor=050505" alt="Fork HRZ"></a>
+  <a href="https://github.com/karem505/whatRust"><img src="https://img.shields.io/badge/upstream-whatRust-8a9a91?labelColor=050505" alt="Projeto original whatRust"></a>
+  <img src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%20v2-f17a39?labelColor=050505" alt="Desenvolvido com Rust e Tauri v2">
+  <img src="https://img.shields.io/github/license/horizonfps/whatRust?label=license&labelColor=050505" alt="Licença MIT">
+</p>
 
-![Latest release](https://img.shields.io/github/v/release/karem505/whatRust?label=release)
-![License: MIT](https://img.shields.io/github/license/karem505/whatRust)
-![Platforms: Linux, Windows, macOS](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-informational)
-![Built with Rust and Tauri v2](https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%20v2-orange)
-![GitHub stars](https://img.shields.io/github/stars/karem505/whatRust?style=social)
+> Este é um fork independente de [karem505/whatRust](https://github.com/karem505/whatRust). Ele continua carregando o `web.whatsapp.com` oficial em uma webview nativa e não possui vínculo com WhatsApp ou Meta.
 
-> **Unofficial, independent project** — not affiliated with, endorsed by, or sponsored by WhatsApp or Meta. whatRust simply loads the official `web.whatsapp.com` interface in a native system webview.
+## O que mudou neste fork
+
+### Interface e personalização
+
+- **Identidade HRZ** — nome do aplicativo alterado para `whatRust - hrz version` nas janelas principais, configurações e tela de bloqueio.
+- **Tema OLED minimalista** — superfícies em preto real, contraste controlado, detalhes em verde-esmeralda e compatibilidade com as variáveis visuais atuais do WhatsApp Web.
+- **Fundos de conversa** — preto puro, grade grafite, brilho esmeralda, cor personalizada ou imagem escolhida no computador.
+- **Imagens locais protegidas** — JPEG, PNG e WebP são validados, reduzidos para até 1920 × 1080 e armazenados somente nas configurações locais do aplicativo.
+- **Acesso rápido** — o botão `H` na barra lateral abre o painel HRZ de aparência, já pré-carregado para evitar janela vazia e reduzir a espera.
+- **Configuração persistente** — tema e fundo voltam automaticamente depois de fechar ou reiniciar o aplicativo.
+
+### Latência, travamentos e sessão
+
+- **Persistência atômica** — contas e preferências usam arquivo temporário, `flush`, backup e recuperação para não corromper o estado após uma interrupção.
+- **Menos trabalho na bandeja** — contagens de mensagens repetidas não refazem o menu nem relêem as configurações sem necessidade.
+- **Recuperação do WebView2** — falhas do renderizador acionam recarga; a queda do processo do navegador solicita um único reinício controlado.
+- **Sessões preservadas** — os caminhos de recuperação reutilizam o mesmo perfil da webview e não apagam cookies, IndexedDB ou o vínculo do dispositivo.
+- **Inicialização multi-conta resiliente** — uma conta com erro não impede as outras janelas de abrirem.
+- **Arrastar e soltar com backpressure** — cada etapa exige confirmação, mantém apenas um bloco em trânsito, aplica limite de 15 segundos e descarta transferências parciais com segurança.
+
+Os achados, correções e riscos ainda abertos estão documentados na [auditoria de latência e estabilidade](docs/stability-audit.md).
+
+## Como obter a versão HRZ
+
+As personalizações deste fork estão na branch `master` de [horizonfps/whatRust](https://github.com/horizonfps/whatRust). Enquanto não houver um instalador próprio publicado em Releases, compile esta versão a partir do código-fonte; os instaladores do projeto original, listados mais abaixo, entregam a versão upstream sem o tema HRZ.
 
 ## Contents
 
+- [O que mudou neste fork](#o-que-mudou-neste-fork)
+- [Como obter a versão HRZ](#como-obter-a-versão-hrz)
 - [What is whatRust?](#what-is-whatrust)
 - [Why whatRust? A lean, native WhatsApp Desktop alternative](#why-whatrust-a-lean-native-whatsapp-desktop-alternative)
 - [Features](#features)
