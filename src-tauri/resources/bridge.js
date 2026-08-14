@@ -75,9 +75,8 @@
   // 1) Client Hints shim — navigator.userAgentData is undefined in WebKit
   //    (WebKitGTK on Linux, WKWebView on macOS), which WhatsApp's capability
   //    check can trip over. On Windows WebView2 is Chromium: userAgentData is
-  //    real and this shim is skipped. The platform token is derived from the
-  //    UA string Rust set (per-OS CHROME_UA), so hints and UA agree instead of
-  //    hardcoding "Linux" everywhere.
+  //    real and this shim is skipped. Windows also keeps WebView2's native UA;
+  //    WebKit platforms derive the platform token from Rust's CHROME_UA.
   try {
     var uaPlatform = /Macintosh|Mac OS X/.test(navigator.userAgent || "")
       ? "macOS"

@@ -1,14 +1,13 @@
 use crate::accounts::{self, Account, ActiveAccount};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-/// Recent desktop Chrome UA. WhatsApp Web rejects the default WebKitGTK/Safari UA.
+/// Recent desktop Chrome UA for WebKit. WhatsApp Web rejects the default WebKitGTK UA.
 /// Bump the major version occasionally, and keep it in sync with the client-hints
 /// shim in `resources/bridge.js` (brands/fullVersionList/uaFullVersion).
 ///
-/// Per-OS variants: on Windows WebView2 exposes REAL Chromium client hints with
-/// platform "Windows", and on macOS the engine is WKWebView — advertising an
-/// "X11; Linux" UA there produces a self-contradictory browser fingerprint, so
-/// each OS claims the Chrome build that actually matches its platform token.
+/// Windows keeps WebView2's native Edge UA and client hints. Overriding them can
+/// clear Chromium's real `Sec-CH-UA-*` values and creates an unnecessary synthetic
+/// browser identity. macOS still needs a Chrome-shaped UA for WKWebView.
 ///
 /// NOTE (Linux): setting this alone is NOT enough — WebKitGTK's site-specific
 /// quirks override the embedder UA for web.whatsapp.com with a fake macOS Safari
@@ -17,12 +16,19 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder}
 #[cfg(target_os = "linux")]
 pub const CHROME_UA: &str =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
-#[cfg(target_os = "windows")]
-pub const CHROME_UA: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
 #[cfg(target_os = "macos")]
 pub const CHROME_UA: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
+
+#[cfg(windows)]
+fn user_agent_override() -> Option<&'static str> {
+    None
+}
+
+#[cfg(not(windows))]
+fn user_agent_override() -> Option<&'static str> {
+    Some(CHROME_UA)
+}
 
 const BRIDGE_JS: &str = include_str!("../resources/bridge.js");
 const APP_ICON: &[u8] = include_bytes!("../icons/128x128.png");
@@ -50,8 +56,12 @@ pub fn open_account_window(
         .title(format!("whatRust — {}", account.name))
         .inner_size(1100.0, 800.0)
         .min_inner_size(560.0, 480.0)
-        .icon(icon)?
-        .user_agent(CHROME_UA)
+        .icon(icon)?;
+    let builder = match user_agent_override() {
+        Some(user_agent) => builder.user_agent(user_agent),
+        None => builder,
+    };
+    let builder = builder
         .initialization_script(BRIDGE_JS)
         // Drag-and-drop is done by capturing the OS drop in Rust and streaming the file
         // into the page (see `register_drop_handler` + bridge.js `__whatrustDropFeed`).
@@ -1003,13 +1013,22 @@ pub fn open_settings_window(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
+    use super::CHROME_UA;
     use super::{
         base64_encode, drop_msg_begin, drop_msg_chunk_prefix, drop_msg_commit, drop_msg_end,
         ensure_download_destination, mime_for, plan_drop, stream_chunks, summarize_skips,
-        toggle_decision, DropSkips, StreamAbort, ToggleAct, CHROME_UA, DROP_CHUNK_BYTES,
+        toggle_decision, user_agent_override, DropSkips, StreamAbort, ToggleAct, DROP_CHUNK_BYTES,
         DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
     };
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_keeps_the_native_webview2_user_agent() {
+        assert_eq!(user_agent_override(), None);
+    }
+
+    #[cfg(not(windows))]
     #[test]
     fn chrome_ua_and_bridge_client_hints_agree_on_the_version() {
         // The UA header (Rust) and the client-hints shim (bridge.js) must present the
