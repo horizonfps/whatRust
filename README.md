@@ -165,7 +165,7 @@ Installs the AppImage to `~/.local/bin` on Linux (with an application-menu entry
 ```powershell
 irm https://raw.githubusercontent.com/horizonfps/whatRust/master/install.ps1 | iex
 ```
-Downloads and runs the latest NSIS installer (`.exe`); an `.msi` is also available on the release page.
+Downloads and runs the latest per-user NSIS installer (`.exe`, no administrator required); an `.msi` is also available on the release page.
 
 **Manual download** — grab a `.AppImage`/`.deb`, `.dmg`, `.exe`, or `.msi` from the [latest HRZ release](https://github.com/horizonfps/whatRust/releases/latest).
 
