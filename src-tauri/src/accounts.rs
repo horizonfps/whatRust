@@ -96,7 +96,18 @@ pub fn rename(f: &mut AccountsFile, id: &str, name: &str) -> Result<(), String> 
 
 /// Sum of unread across all accounts.
 pub fn aggregate_unread(map: &HashMap<String, u32>) -> u32 {
-    map.values().copied().sum()
+    map.values()
+        .copied()
+        .fold(0, |total, count| total.saturating_add(count))
+}
+
+/// Update one account and return the new aggregate only when its count changed.
+pub fn update_unread(map: &mut HashMap<String, u32>, id: &str, count: u32) -> Option<u32> {
+    if map.get(id).copied() == Some(count) {
+        return None;
+    }
+    map.insert(id.to_string(), count);
+    Some(aggregate_unread(map))
 }
 
 // ---------------------------------------------------------------------------
@@ -368,5 +379,22 @@ mod tests {
         m.insert("acct-1".to_string(), 0);
         assert_eq!(aggregate_unread(&m), 0);
         assert_eq!(aggregate_unread(&HashMap::new()), 0);
+    }
+
+    #[test]
+    fn aggregate_unread_saturates_instead_of_overflowing() {
+        let mut m = HashMap::new();
+        m.insert("default".to_string(), u32::MAX);
+        m.insert("acct-1".to_string(), 1);
+        assert_eq!(aggregate_unread(&m), u32::MAX);
+    }
+
+    #[test]
+    fn update_unread_returns_total_only_for_changes() {
+        let mut m = HashMap::new();
+        assert_eq!(update_unread(&mut m, "default", 2), Some(2));
+        assert_eq!(update_unread(&mut m, "default", 2), None);
+        assert_eq!(update_unread(&mut m, "acct-1", 3), Some(5));
+        assert_eq!(update_unread(&mut m, "default", 0), Some(3));
     }
 }

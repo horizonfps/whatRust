@@ -81,9 +81,9 @@ pub fn set_unread(window: tauri::Window, app: tauri::AppHandle, title: String) {
     let total = {
         let state = app.state::<UnreadMap>();
         let mut map = state.lock().unwrap();
-        map.insert(id.to_string(), count);
-        accounts::aggregate_unread(&map)
+        accounts::update_unread(&mut map, id, count)
     };
+    let Some(total) = total else { return };
 
     crate::tray::update_badge(&app, total);
     crate::tray::rebuild_menu(&app);
