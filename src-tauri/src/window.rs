@@ -1309,7 +1309,7 @@ mod tests {
         // The reader enforces the planned size: fewer bytes than promised (file
         // truncated mid-read) or extra bytes past it (file grew) must abort with
         // Changed — the old code silently read to EOF, bypassing the size cap.
-        let data = vec![7u8; 100];
+        let data = [7u8; 100];
         let shrunk = stream_chunks(&mut &data[..], 200, |_| Ok(()));
         assert!(matches!(shrunk, Err(StreamAbort::Changed)), "shrunk file");
         let grown = stream_chunks(&mut &data[..], 50, |_| Ok(()));
