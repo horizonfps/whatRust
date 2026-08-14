@@ -25,6 +25,30 @@ fn user_agent_override() -> Option<&'static str> {
     None
 }
 
+#[cfg(windows)]
+#[derive(Debug, PartialEq, Eq)]
+enum Webview2Recovery {
+    Reload,
+    Restart,
+    Observe,
+}
+
+#[cfg(windows)]
+fn webview2_recovery(
+    kind: webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_PROCESS_FAILED_KIND,
+) -> Webview2Recovery {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
+    };
+
+    match kind {
+        COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED => Webview2Recovery::Restart,
+        COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED => Webview2Recovery::Reload,
+        _ => Webview2Recovery::Observe,
+    }
+}
+
 #[cfg(not(windows))]
 fn user_agent_override() -> Option<&'static str> {
     Some(CHROME_UA)
@@ -857,7 +881,8 @@ fn enable_webview_media(win: &WebviewWindow) {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = win.with_webview(enable_media_windows);
+        let app = win.app_handle().clone();
+        let _ = win.with_webview(move |webview| enable_media_windows(webview, app));
     }
     #[cfg(target_os = "macos")]
     {
@@ -870,13 +895,16 @@ fn enable_webview_media(win: &WebviewWindow) {
 /// Windows (WebView2): auto-allow microphone/camera permission requests so WhatsApp
 /// voice messages and calls work without a prompt (and can't be wedged by a prior "Block").
 #[cfg(target_os = "windows")]
-fn enable_media_windows(webview: tauri::webview::PlatformWebview) {
+fn enable_media_windows(webview: tauri::webview::PlatformWebview, app: AppHandle) {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        ICoreWebView2, ICoreWebView2PermissionRequestedEventArgs, COREWEBVIEW2_PERMISSION_KIND,
+        ICoreWebView2, ICoreWebView2PermissionRequestedEventArgs,
+        ICoreWebView2ProcessFailedEventArgs, COREWEBVIEW2_PERMISSION_KIND,
         COREWEBVIEW2_PERMISSION_KIND_CAMERA, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
-        COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        COREWEBVIEW2_PERMISSION_STATE_ALLOW, COREWEBVIEW2_PROCESS_FAILED_KIND,
     };
-    use webview2_com::PermissionRequestedEventHandler;
+    use webview2_com::{PermissionRequestedEventHandler, ProcessFailedEventHandler};
+
+    static RESTARTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     // SAFETY: with_webview runs on the UI thread where the WebView2 controller lives;
     // these are standard WebView2 COM calls.
@@ -904,6 +932,46 @@ fn enable_media_windows(webview: tauri::webview::PlatformWebview) {
         ));
         let mut token: i64 = 0;
         let _ = core.add_PermissionRequested(&handler, &mut token);
+
+        let failure_handler = ProcessFailedEventHandler::create(Box::new(
+            move |sender: Option<ICoreWebView2>,
+                  args: Option<ICoreWebView2ProcessFailedEventArgs>|
+                  -> windows_core::Result<()> {
+                let Some(args) = args else {
+                    crate::dlog::log("webview: process failure reported without details");
+                    return Ok(());
+                };
+                let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                args.ProcessFailedKind(&mut kind)?;
+                crate::dlog::log(&format!("webview: process failure kind={}", kind.0));
+
+                match webview2_recovery(kind) {
+                    Webview2Recovery::Reload => {
+                        if let Some(sender) = sender {
+                            match sender.Reload() {
+                                Ok(()) => crate::dlog::log("webview: renderer reload requested"),
+                                Err(_) => crate::dlog::log("webview: renderer reload failed"),
+                            }
+                        }
+                    }
+                    Webview2Recovery::Restart => {
+                        if !RESTARTING.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                            crate::dlog::log("webview: browser process exited; restart requested");
+                            app.request_restart();
+                        }
+                    }
+                    Webview2Recovery::Observe => {}
+                }
+                Ok(())
+            },
+        ));
+        let mut failure_token: i64 = 0;
+        if core
+            .add_ProcessFailed(&failure_handler, &mut failure_token)
+            .is_err()
+        {
+            crate::dlog::log("webview: failed to register process recovery");
+        }
     }
 }
 
@@ -1026,6 +1094,35 @@ mod tests {
     #[test]
     fn windows_keeps_the_native_webview2_user_agent() {
         assert_eq!(user_agent_override(), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn webview2_failure_policy_recovers_only_fatal_content_failures() {
+        use super::{webview2_recovery, Webview2Recovery};
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED,
+            COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE,
+        };
+
+        assert_eq!(
+            webview2_recovery(COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED),
+            Webview2Recovery::Restart
+        );
+        assert_eq!(
+            webview2_recovery(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED),
+            Webview2Recovery::Reload
+        );
+        assert_eq!(
+            webview2_recovery(COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE),
+            Webview2Recovery::Observe
+        );
+        assert_eq!(
+            webview2_recovery(COREWEBVIEW2_PROCESS_FAILED_KIND_GPU_PROCESS_EXITED),
+            Webview2Recovery::Observe
+        );
     }
 
     #[cfg(not(windows))]
