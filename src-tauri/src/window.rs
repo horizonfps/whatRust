@@ -231,6 +231,7 @@ fn register_drop_handler(win: &WebviewWindow) {
     // Process-wide drop id: lets the page key concurrent streams from several
     // windows/drops without guessing by file name or content.
     static DROP_SEQ: AtomicU64 = AtomicU64::new(1);
+    let stream_lock = std::sync::Arc::new(std::sync::Mutex::new(()));
     let win = win.clone();
     win.clone().on_window_event(move |event| {
         let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) = event
@@ -257,8 +258,14 @@ fn register_drop_handler(win: &WebviewWindow) {
         }
         let paths = paths.clone();
         let w = win.clone();
+        let stream_lock = stream_lock.clone();
         // Read + stream off the UI thread: a large video would otherwise stall the window.
-        std::thread::spawn(move || stream_drop(&w, drop_id, &paths));
+        std::thread::spawn(move || {
+            let _guard = stream_lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            stream_drop(&w, drop_id, &paths);
+        });
     });
 }
 
@@ -409,6 +416,12 @@ enum StreamAbort {
     Changed,
     /// `eval` into the webview failed; the whole drop is abandoned.
     Eval(tauri::Error),
+    /// The page did not acknowledge a message before the bounded deadline.
+    AckTimeout,
+    /// The callback channel closed before the page acknowledged the message.
+    AckDisconnected,
+    /// The page rejected a begin, chunk, or end message.
+    AckRejected,
 }
 
 // --- page-message builders (pure, unit-tested) ---
@@ -416,27 +429,27 @@ enum StreamAbort {
 fn drop_msg_begin(drop_id: u64, idx: usize, name: &str, mime: &str, len: u64) -> String {
     let name_json = serde_json::to_string(name).unwrap_or_else(|_| "\"file\"".into());
     format!(
-        "window.__whatrustDropFeed&&window.__whatrustDropFeed({{op:\"begin\",drop:{drop_id},file:{idx},name:{name_json},type:\"{mime}\",size:{len}}});"
+        "window.__whatrustDropFeed?window.__whatrustDropFeed({{op:\"begin\",drop:{drop_id},file:{idx},name:{name_json},type:\"{mime}\",size:{len}}}):\"NOHANDLER\""
     )
 }
 
 fn drop_msg_chunk_prefix(drop_id: u64, idx: usize) -> String {
     format!(
-        "window.__whatrustDropFeed&&window.__whatrustDropFeed({{op:\"chunk\",drop:{drop_id},file:{idx},b64:\""
+        "window.__whatrustDropFeed?window.__whatrustDropFeed({{op:\"chunk\",drop:{drop_id},file:{idx},b64:\""
     )
 }
 
-const DROP_MSG_CHUNK_SUFFIX: &str = "\"});";
+const DROP_MSG_CHUNK_SUFFIX: &str = "\"}):\"NOHANDLER\"";
 
 fn drop_msg_end(drop_id: u64, idx: usize) -> String {
     format!(
-        "window.__whatrustDropFeed&&window.__whatrustDropFeed({{op:\"end\",drop:{drop_id},file:{idx}}});"
+        "window.__whatrustDropFeed?window.__whatrustDropFeed({{op:\"end\",drop:{drop_id},file:{idx}}}):\"NOHANDLER\""
     )
 }
 
 fn drop_msg_abort(drop_id: u64, idx: usize) -> String {
     format!(
-        "window.__whatrustDropFeed&&window.__whatrustDropFeed({{op:\"abort\",drop:{drop_id},file:{idx}}});"
+        "window.__whatrustDropFeed?window.__whatrustDropFeed({{op:\"abort\",drop:{drop_id},file:{idx}}}):\"NOHANDLER\""
     )
 }
 
@@ -446,6 +459,37 @@ fn drop_msg_commit(drop_id: u64, files: usize) -> String {
     format!(
         "window.__whatrustDropFeed?window.__whatrustDropFeed({{op:\"commit\",drop:{drop_id},files:{files}}}):\"NOHANDLER\""
     )
+}
+
+fn drop_ack_value(ack: &str) -> String {
+    serde_json::from_str::<String>(ack).unwrap_or_else(|_| ack.trim().to_owned())
+}
+
+fn drop_ack_is(ack: &str, expected: &str) -> bool {
+    drop_ack_value(ack) == expected
+}
+
+fn eval_drop_message(w: &WebviewWindow, js: String) -> Result<String, StreamAbort> {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    w.eval_with_callback(js, move |ack| {
+        let _ = sender.try_send(ack);
+    })
+    .map_err(StreamAbort::Eval)?;
+
+    match receiver.recv_timeout(std::time::Duration::from_secs(15)) {
+        Ok(ack) => Ok(ack),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(StreamAbort::AckTimeout),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(StreamAbort::AckDisconnected),
+    }
+}
+
+fn eval_drop_step(w: &WebviewWindow, js: String) -> Result<(), StreamAbort> {
+    let ack = eval_drop_message(w, js)?;
+    if drop_ack_is(&ack, "OK") {
+        Ok(())
+    } else {
+        Err(StreamAbort::AckRejected)
+    }
 }
 
 /// Read exactly `expected` bytes from `r`, emitting standalone base64 chunks of
@@ -506,28 +550,26 @@ fn stream_one_file(
     if len != f.len || len > MAX_DROP_FILE_BYTES {
         return Err(StreamAbort::Changed);
     }
-    w.eval(drop_msg_begin(drop_id, idx, &f.name, f.mime, len))
-        .map_err(StreamAbort::Eval)?;
+    eval_drop_step(w, drop_msg_begin(drop_id, idx, &f.name, f.mime, len))?;
     let prefix = drop_msg_chunk_prefix(drop_id, idx);
     let result = stream_chunks(&mut file, len, |b64| {
         let mut js = String::with_capacity(prefix.len() + b64.len() + DROP_MSG_CHUNK_SUFFIX.len());
         js.push_str(&prefix);
         js.push_str(b64); // base64 alphabet needs no JS-string escaping
         js.push_str(DROP_MSG_CHUNK_SUFFIX);
-        w.eval(js).map_err(StreamAbort::Eval)
+        eval_drop_step(w, js)
     });
-    match result {
-        Ok(()) => w
-            .eval(drop_msg_end(drop_id, idx))
-            .map_err(StreamAbort::Eval),
-        Err(e) => {
-            // Best-effort: tell the page to discard the partial file.
-            if !matches!(e, StreamAbort::Eval(_)) {
-                let _ = w.eval(drop_msg_abort(drop_id, idx));
-            }
-            Err(e)
+    let result = match result {
+        Ok(()) => eval_drop_step(w, drop_msg_end(drop_id, idx)),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = &result {
+        // Best-effort: release page-side chunks after any partial stream failure.
+        if !matches!(error, StreamAbort::Eval(_)) {
+            let _ = w.eval(drop_msg_abort(drop_id, idx));
         }
     }
+    result
 }
 
 /// Plan, stream, and commit one OS drop, then surface the outcome to the user.
@@ -566,35 +608,54 @@ fn stream_drop(w: &WebviewWindow, drop_id: u64, paths: &[std::path::PathBuf]) {
                 );
                 return;
             }
+            Err(StreamAbort::AckTimeout) => {
+                crate::dlog::log(&format!(
+                    "dragdrop: drop #{drop_id}: page ack timed out, abandoning drop"
+                ));
+                crate::notify::show(
+                    w.app_handle(),
+                    "Files not attached",
+                    "WhatsApp stopped responding while receiving the dropped files. Please try again.",
+                );
+                return;
+            }
+            Err(StreamAbort::AckDisconnected | StreamAbort::AckRejected) => {
+                crate::dlog::log(&format!(
+                    "dragdrop: drop #{drop_id}: page rejected or lost the stream"
+                ));
+                crate::notify::show(
+                    w.app_handle(),
+                    "Files not attached",
+                    "WhatsApp wasn't ready to receive the dropped files. Please try again.",
+                );
+                return;
+            }
         }
     }
     if streamed > 0 {
-        // eval_with_callback: the ack proves the page-side handler actually ran —
-        // a plain eval() Ok only means "queued", which used to be logged as success
-        // even when injection never happened.
-        let app = w.app_handle().clone();
         let commit = drop_msg_commit(drop_id, streamed);
-        let res = w.eval_with_callback(commit, move |ack| {
-            let ack = ack.trim().to_string();
-            crate::dlog::log(&format!("dragdrop: drop #{drop_id} commit ack: {ack}"));
-            // NOHANDLER: bridge.js isn't loaded (page mid-navigation). EMPTY: the
-            // page received no complete file (chunks lost). Both mean nothing
-            // attached — say so instead of leaving the user staring at nothing.
-            if ack.contains("NOHANDLER") || ack.contains("EMPTY") {
+        match eval_drop_message(w, commit) {
+            Ok(ack) => {
+                let ack = drop_ack_value(&ack);
+                crate::dlog::log(&format!("dragdrop: drop #{drop_id} commit ack: {ack}"));
+                if !ack.starts_with("QUEUED:") {
+                    crate::notify::show(
+                        w.app_handle(),
+                        "Files not attached",
+                        "WhatsApp wasn't ready to receive the dropped files. Please try again.",
+                    );
+                }
+            }
+            Err(_) => {
+                crate::dlog::log(&format!(
+                    "dragdrop: drop #{drop_id}: commit acknowledgement failed"
+                ));
                 crate::notify::show(
-                    &app,
+                    w.app_handle(),
                     "Files not attached",
                     "WhatsApp wasn't ready to receive the dropped files. Please try again.",
                 );
             }
-        });
-        match res {
-            Ok(()) => crate::dlog::log(&format!(
-                "dragdrop: drop #{drop_id}: committed {streamed} file(s), awaiting ack"
-            )),
-            Err(e) => crate::dlog::log(&format!(
-                "dragdrop: drop #{drop_id}: commit eval failed: {e}"
-            )),
         }
     }
     if skips.total() > 0 {
@@ -1084,10 +1145,10 @@ mod tests {
     #[cfg(not(windows))]
     use super::CHROME_UA;
     use super::{
-        base64_encode, drop_msg_begin, drop_msg_chunk_prefix, drop_msg_commit, drop_msg_end,
-        ensure_download_destination, mime_for, plan_drop, stream_chunks, summarize_skips,
-        toggle_decision, user_agent_override, DropSkips, StreamAbort, ToggleAct, DROP_CHUNK_BYTES,
-        DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
+        base64_encode, drop_ack_is, drop_msg_begin, drop_msg_chunk_prefix, drop_msg_commit,
+        drop_msg_end, ensure_download_destination, mime_for, plan_drop, stream_chunks,
+        summarize_skips, toggle_decision, user_agent_override, DropSkips, StreamAbort, ToggleAct,
+        DROP_CHUNK_BYTES, DROP_MSG_CHUNK_SUFFIX, MAX_DROP_FILES,
     };
 
     #[cfg(windows)]
@@ -1337,7 +1398,8 @@ mod tests {
     #[test]
     fn drop_messages_are_well_formed_and_guarded() {
         let begin = drop_msg_begin(7, 0, "a \"quoted\" name.mp4", "video/mp4", 42);
-        assert!(begin.starts_with("window.__whatrustDropFeed&&"));
+        assert!(begin.starts_with("window.__whatrustDropFeed?"));
+        assert!(begin.ends_with(":\"NOHANDLER\""));
         assert!(
             begin.contains("\\\"quoted\\\""),
             "name must be JSON-escaped"
@@ -1346,12 +1408,21 @@ mod tests {
         let prefix = drop_msg_chunk_prefix(7, 0);
         assert!(prefix.ends_with("b64:\""));
         assert!(DROP_MSG_CHUNK_SUFFIX.starts_with('"'));
+        assert!(DROP_MSG_CHUNK_SUFFIX.ends_with(":\"NOHANDLER\""));
         assert!(drop_msg_end(7, 0).contains("\"end\""));
         // Commit uses a ternary so a missing handler acks "NOHANDLER" instead of
         // silently evaluating to undefined.
         let commit = drop_msg_commit(7, 3);
         assert!(commit.contains("?window.__whatrustDropFeed("));
         assert!(commit.ends_with(":\"NOHANDLER\""));
+    }
+
+    #[test]
+    fn drop_ack_requires_the_exact_expected_value() {
+        assert!(drop_ack_is("\"OK\"", "OK"));
+        assert!(drop_ack_is("QUEUED:2", "QUEUED:2"));
+        assert!(!drop_ack_is("\"NOHANDLER\"", "OK"));
+        assert!(!drop_ack_is("\"NOT_OK\"", "OK"));
     }
 
     #[test]

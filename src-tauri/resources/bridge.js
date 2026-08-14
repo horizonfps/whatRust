@@ -230,7 +230,8 @@
   //    (Tauri's drop handler consumes it), so Rust captures the drop (window.rs
   //    `register_drop_handler`) and STREAMS the file bytes here through
   //    `__whatrustDropFeed` as begin/chunk/end/commit messages keyed by a drop id.
-  //    Chunked transport (vs the old single giant eval) keeps peak memory at one
+  //    Chunked, acknowledged transport (vs the old single giant eval) keeps IPC
+  //    backpressure at one in-flight chunk and peak transport memory bounded to one
   //    ~5.6 MB base64 chunk per step and stays far below WebView2's cross-process
   //    message ceiling; each chunk is standalone base64 (Rust emits multiple-of-3
   //    byte chunks) decoded to bytes on arrival.
@@ -516,6 +517,6 @@
         return "ERR";
       }
     };
-    drop.log("drop injector v3 (chunked, queued, no-loss routing) ready");
+    drop.log("drop injector v4 (acknowledged, queued, no-loss routing) ready");
   } catch (e) {}
 })();
